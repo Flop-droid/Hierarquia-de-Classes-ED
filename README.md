@@ -1,4 +1,4 @@
-# Calculadora Matricial Orientada a Objetos em Python
+# Calculadora Matricial Orientada a Objetos em Python 💻
 Este projeto é uma calculadora matricial eficiente e robusta, desenvolvida em *Python*. A aplicação utiliza os princípios da Programação Orientada a Objetos (POO) para manipular diversos tipos de matrizes, incluindo as formas Geral (m x n), Diagonal e Triangulares (Superior e Inferior). A calculadora foi projetada para otimizar tanto o uso de memória quanto o desempenho, empregando estruturas de dados e algoritmos especializados para cada tipo de matriz.
 
 ## Funcionalidades Abordadas
