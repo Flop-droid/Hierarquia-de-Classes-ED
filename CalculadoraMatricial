@@ -1,0 +1,777 @@
+// =================================================================================
+// ==              CALCULADORA MATRICIAL - VERSÃO CORRIGIDA E MELHORADA           ==
+// =================================================================================
+// Este arquivo combina todas as classes e a função main, corrigindo os erros
+// identificados e implementando as funcionalidades que estavam faltando.
+//
+// Para compilar (usando g++):
+// g++ -std=c++17 -o calculadora este_arquivo.cpp
+//
+// Para executar:
+// ./calculadora
+// =================================================================================
+
+
+// =================================================================================
+// ==                                  INCLUDES                                   ==
+// =================================================================================
+#include <iostream>
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <memory>
+#include <map>
+#include <iomanip>
+#include <typeinfo>
+#include <limits> // Para std::numeric_limits
+
+// =================================================================================
+// ==                          DECLARAÇÕES DE CLASSES                             ==
+// =================================================================================
+
+class Matriz;
+class MatrizGeral; // MELHORIA: Classe para matrizes m x n genéricas
+class MatrizQuadrada;
+class MatrizQuadradaGeral; // MELHORIA: Implementação concreta de MatrizQuadrada
+class MatrizTriangularInferior;
+class MatrizTriangularSuperior;
+class MatrizDiagonal;
+
+// =================================================================================
+// ==                           CLASSE Matriz (BASE)                              ==
+// =================================================================================
+
+class Matriz {
+protected:
+    int linhas;
+    int colunas;
+
+public:
+    Matriz(int l, int c) : linhas(l), colunas(c) {
+        if (l <= 0 || c <= 0) throw std::invalid_argument("Dimensões devem ser positivas.");
+    }
+    virtual ~Matriz() = default;
+
+    virtual double get(int i, int j) const = 0;
+    virtual void set(int i, int j, double valor) = 0;
+
+    virtual void imprimir() const;
+    virtual std::string getTipo() const = 0; // MELHORIA: Forçar filhas a definirem seu tipo.
+    virtual std::unique_ptr<Matriz> transpor() const;
+
+    // Operadores retornam unique_ptr<Matriz> para polimorfismo
+    virtual std::unique_ptr<Matriz> operator+(const Matriz& outra) const;
+    virtual std::unique_ptr<Matriz> operator-(const Matriz& outra) const;
+    virtual std::unique_ptr<Matriz> operator*(const Matriz& outra) const;
+    virtual std::unique_ptr<Matriz> operator*(double escalar) const;
+
+    int getLinhas() const { return linhas; }
+    int getColunas() const { return colunas; }
+};
+
+// =================================================================================
+// ==                            CLASSE MatrizGeral                               ==
+// =================================================================================
+// MELHORIA: Adicionada para lidar com matrizes não-quadradas m x n.
+class MatrizGeral : public Matriz {
+private:
+    std::vector<std::vector<double>> dados;
+
+public:
+    MatrizGeral(int l, int c);
+    MatrizGeral(const std::vector<std::vector<double>>& data);
+    
+    double get(int i, int j) const override;
+    void set(int i, int j, double valor) override;
+    std::string getTipo() const override { return "Geral"; }
+};
+
+// =================================================================================
+// ==                        CLASSE MatrizQuadrada (Abstrata)                     ==
+// =================================================================================
+// MELHORIA: Agora é uma classe de interface, sem dados próprios, para evitar desperdício.
+class MatrizQuadrada : public Matriz {
+public:
+    MatrizQuadrada(int ordem) : Matriz(ordem, ordem) {}
+    virtual double traco() const;
+    virtual double determinante() const {
+        throw std::logic_error("Determinante não implementado para matriz quadrada genérica.");
+    }
+};
+
+// =================================================================================
+// ==                        CLASSE MatrizQuadradaGeral                           ==
+// =================================================================================
+class MatrizQuadradaGeral : public MatrizQuadrada {
+private:
+    std::vector<std::vector<double>> dados;
+
+public:
+    MatrizQuadradaGeral(int ordem);
+    MatrizQuadradaGeral(const std::vector<std::vector<double>>& data);
+
+    double get(int i, int j) const override;
+    void set(int i, int j, double valor) override;
+    std::string getTipo() const override { return "Quadrada Geral"; }
+};
+
+
+// =================================================================================
+// ==                     CLASSE MatrizTriangularInferior                         ==
+// =================================================================================
+class MatrizTriangularInferior : public MatrizQuadrada {
+private:
+    std::vector<std::vector<double>> dados_otimizados;
+
+public:
+    MatrizTriangularInferior(int ordem);
+    
+    double get(int i, int j) const override;
+    void set(int i, int j, double valor) override;
+    std::string getTipo() const override { return "Triangular Inferior"; }
+    
+    double determinante() const override;
+};
+
+// =================================================================================
+// ==                     CLASSE MatrizTriangularSuperior                         ==
+// =================================================================================
+class MatrizTriangularSuperior : public MatrizQuadrada {
+private:
+    std::vector<std::vector<double>> dados_otimizados;
+
+public:
+    MatrizTriangularSuperior(int ordem);
+
+    double get(int i, int j) const override;
+    void set(int i, int j, double valor) override;
+    std::string getTipo() const override { return "Triangular Superior"; }
+
+    double determinante() const override;
+};
+
+// =================================================================================
+// ==                           CLASSE MatrizDiagonal                             ==
+// =================================================================================
+// CORREÇÃO: Herda de MatrizQuadrada diretamente, é mais limpo.
+class MatrizDiagonal : public MatrizQuadrada {
+private:
+    std::vector<double> dados_diag;
+
+public:
+    MatrizDiagonal(int ordem);
+
+    double get(int i, int j) const override;
+    void set(int i, int j, double valor) override;
+    std::string getTipo() const override { return "Diagonal"; }
+    double determinante() const override; // Herda a lógica, mas implementa de forma otimizada
+
+    // Sobrecarga com implementação especializada (rápida)
+    std::unique_ptr<Matriz> operator+(const Matriz& outra) const override;
+    std::unique_ptr<Matriz> operator*(double escalar) const override;
+
+    // Permite que o operador+ acesse os dados de outra matriz diagonal
+    friend class Matriz; 
+};
+
+
+// =================================================================================
+// ==                            CLASSE Calculadora                             ==
+// =================================================================================
+class Calculadora {
+private:
+    std::vector<std::unique_ptr<Matriz>> matrizes;
+    std::map<std::string, int> nomes;
+
+    void exibirMenu();
+    void inserirMatriz();
+    void inserirIdentidade();
+    std::unique_ptr<Matriz> criarMatrizPelaAnalise(const std::vector<std::vector<double>>& data);
+    void listarMatrizes();
+    void imprimirMatriz();
+    void operacaoSoma();
+    void operacaoSubtracao();
+    void operacaoMultiplicacaoMatricial();
+    void operacaoMultiplicacaoEscalar();
+    void operacaoTransposicao();
+    void calcularTraco();
+    void calcularDeterminante();
+    
+    int selecionarMatriz(const std::string& prompt);
+
+public:
+    void executar();
+};
+
+
+// =================================================================================
+// ==                     IMPLEMENTAÇÕES - Matriz (BASE)                          ==
+// =================================================================================
+
+void Matriz::imprimir() const {
+    std::cout << std::fixed << std::setprecision(2);
+    for (int i = 0; i < linhas; ++i) {
+        for (int j = 0; j < colunas; ++j) {
+            std::cout << std::setw(8) << get(i, j);
+        }
+        std::cout << std::endl;
+    }
+}
+
+// CORREÇÃO: Implementações genéricas agora retornam MatrizGeral para suportar m x n.
+std::unique_ptr<Matriz> Matriz::operator+(const Matriz& outra) const {
+    if (linhas != outra.getLinhas() || colunas != outra.getColunas()) {
+        throw std::invalid_argument("Dimensões incompatíveis para soma.");
+    }
+    auto resultado = std::make_unique<MatrizGeral>(linhas, colunas);
+    for (int i = 0; i < linhas; ++i) {
+        for (int j = 0; j < colunas; ++j) {
+            resultado->set(i, j, this->get(i, j) + outra.get(i, j));
+        }
+    }
+    return resultado;
+}
+
+std::unique_ptr<Matriz> Matriz::operator-(const Matriz& outra) const {
+     if (linhas != outra.getLinhas() || colunas != outra.getColunas()) {
+        throw std::invalid_argument("Dimensões incompatíveis para subtração.");
+    }
+    auto resultado = std::make_unique<MatrizGeral>(linhas, colunas);
+    for (int i = 0; i < linhas; ++i) {
+        for (int j = 0; j < colunas; ++j) {
+            resultado->set(i, j, this->get(i, j) - outra.get(i, j));
+        }
+    }
+    return resultado;
+}
+
+std::unique_ptr<Matriz> Matriz::operator*(const Matriz& outra) const {
+    if (colunas != outra.getLinhas()) {
+        throw std::invalid_argument("Dimensões incompatíveis para multiplicação (A.colunas != B.linhas).");
+    }
+    auto resultado = std::make_unique<MatrizGeral>(linhas, outra.getColunas());
+     for (int i = 0; i < linhas; ++i) {
+        for (int j = 0; j < outra.getColunas(); ++j) {
+            double soma_prod = 0.0;
+            for (int k = 0; k < colunas; ++k) {
+                soma_prod += this->get(i, k) * outra.get(k, j);
+            }
+            resultado->set(i, j, soma_prod);
+        }
+    }
+    return resultado;
+}
+
+std::unique_ptr<Matriz> Matriz::operator*(double escalar) const {
+    auto resultado = std::make_unique<MatrizGeral>(linhas, colunas);
+     for (int i = 0; i < linhas; ++i) {
+        for (int j = 0; j < colunas; ++j) {
+           resultado->set(i, j, this->get(i, j) * escalar);
+        }
+    }
+    return resultado;
+}
+
+std::unique_ptr<Matriz> Matriz::transpor() const {
+    auto resultado = std::make_unique<MatrizGeral>(colunas, linhas);
+    for(int i = 0; i < linhas; ++i) {
+        for (int j = 0; j < colunas; ++j) {
+            resultado->set(j, i, get(i, j));
+        }
+    }
+    return resultado;
+}
+
+// =================================================================================
+// ==                       IMPLEMENTAÇÕES - MatrizGeral                          ==
+// =================================================================================
+MatrizGeral::MatrizGeral(int l, int c) : Matriz(l, c) {
+    dados.resize(l, std::vector<double>(c, 0.0));
+}
+MatrizGeral::MatrizGeral(const std::vector<std::vector<double>>& data) : Matriz(data.size(), data[0].size()) {
+    dados = data;
+}
+double MatrizGeral::get(int i, int j) const {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    return dados[i][j];
+}
+void MatrizGeral::set(int i, int j, double valor) {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    dados[i][j] = valor;
+}
+
+// =================================================================================
+// ==                     IMPLEMENTAÇÕES - MatrizQuadrada                         ==
+// =================================================================================
+double MatrizQuadrada::traco() const {
+    double soma = 0.0;
+    for (int i = 0; i < linhas; ++i) {
+        soma += get(i, i);
+    }
+    return soma;
+}
+
+// =================================================================================
+// ==                   IMPLEMENTAÇÕES - MatrizQuadradaGeral                      ==
+// =================================================================================
+MatrizQuadradaGeral::MatrizQuadradaGeral(int ordem) : MatrizQuadrada(ordem) {
+    dados.resize(ordem, std::vector<double>(ordem, 0.0));
+}
+MatrizQuadradaGeral::MatrizQuadradaGeral(const std::vector<std::vector<double>>& data) : MatrizQuadrada(data.size()){
+    if (data.empty() || data.size() != data[0].size()) {
+        throw std::invalid_argument("Dados inválidos para matriz quadrada.");
+    }
+    dados = data;
+}
+double MatrizQuadradaGeral::get(int i, int j) const {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    return dados[i][j];
+}
+void MatrizQuadradaGeral::set(int i, int j, double valor) {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    dados[i][j] = valor;
+}
+
+
+// =================================================================================
+// ==                 IMPLEMENTAÇÕES - MatrizTriangularInferior                   ==
+// =================================================================================
+MatrizTriangularInferior::MatrizTriangularInferior(int ordem) : MatrizQuadrada(ordem) {
+    dados_otimizados.resize(ordem);
+    for (int i = 0; i < ordem; ++i) {
+        dados_otimizados[i].resize(i + 1, 0.0);
+    }
+}
+double MatrizTriangularInferior::get(int i, int j) const {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    if (j > i) return 0.0;
+    return dados_otimizados[i][j];
+}
+void MatrizTriangularInferior::set(int i, int j, double valor) {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    if (j > i && valor != 0.0) {
+        throw std::invalid_argument("Não é possível inserir valor não nulo na parte superior de uma matriz triangular inferior.");
+    }
+    if(j <= i) dados_otimizados[i][j] = valor;
+}
+double MatrizTriangularInferior::determinante() const {
+    double det = 1.0;
+    for (int i = 0; i < linhas; i++) {
+        det *= get(i, i);
+    }
+    return det;
+}
+
+// =================================================================================
+// ==                 IMPLEMENTAÇÕES - MatrizTriangularSuperior                   ==
+// =================================================================================
+MatrizTriangularSuperior::MatrizTriangularSuperior(int ordem) : MatrizQuadrada(ordem) {
+    dados_otimizados.resize(ordem);
+    for (int i = 0; i < ordem; ++i) {
+        dados_otimizados[i].resize(ordem - i, 0.0);
+    }
+}
+double MatrizTriangularSuperior::get(int i, int j) const {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    if (j < i) return 0.0;
+    return dados_otimizados[i][j - i];
+}
+void MatrizTriangularSuperior::set(int i, int j, double valor) {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    if (j < i && valor != 0.0) {
+        throw std::invalid_argument("Não é possível inserir valor não nulo na parte inferior de uma matriz triangular superior.");
+    }
+    if (j >= i) dados_otimizados[i][j - i] = valor;
+}
+double MatrizTriangularSuperior::determinante() const {
+    double det = 1.0;
+    for (int i = 0; i < linhas; i++) {
+        det *= get(i, i);
+    }
+    return det;
+}
+
+// =================================================================================
+// ==                       IMPLEMENTAÇÕES - MatrizDiagonal                       ==
+// =================================================================================
+MatrizDiagonal::MatrizDiagonal(int ordem) : MatrizQuadrada(ordem) {
+    dados_diag.resize(ordem, 0.0);
+}
+double MatrizDiagonal::get(int i, int j) const {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    if (i == j) return dados_diag[i];
+    return 0.0;
+}
+void MatrizDiagonal::set(int i, int j, double valor) {
+    if (i < 0 || i >= linhas || j < 0 || j >= colunas) throw std::out_of_range("Índice fora do limite.");
+    if (i == j) {
+        dados_diag[i] = valor;
+    } else if (valor != 0.0) {
+        throw std::invalid_argument("Não é possível inserir valor não nulo fora da diagonal principal.");
+    }
+}
+double MatrizDiagonal::determinante() const {
+    double det = 1.0;
+    for (double val : dados_diag) {
+        det *= val;
+    }
+    return det;
+}
+
+std::unique_ptr<Matriz> MatrizDiagonal::operator+(const Matriz& outra) const {
+    if (auto outra_diag = dynamic_cast<const MatrizDiagonal*>(&outra)) {
+        if (linhas != outra_diag->getLinhas()) {
+            throw std::invalid_argument("Dimensões incompatíveis para soma.");
+        }
+        auto resultado = std::make_unique<MatrizDiagonal>(linhas);
+        // CORREÇÃO: Acesso aos dados do resultado via um ponteiro castado.
+        auto* resultado_ptr = dynamic_cast<MatrizDiagonal*>(resultado.get());
+        for (int i = 0; i < linhas; ++i) {
+            resultado_ptr->dados_diag[i] = this->dados_diag[i] + outra_diag->dados_diag[i];
+        }
+        return resultado;
+    }
+    return Matriz::operator+(outra); // Fallback para a implementação genérica
+}
+
+std::unique_ptr<Matriz> MatrizDiagonal::operator*(double escalar) const {
+    auto resultado = std::make_unique<MatrizDiagonal>(linhas);
+    auto* resultado_ptr = dynamic_cast<MatrizDiagonal*>(resultado.get());
+    for (int i = 0; i < linhas; ++i) {
+        resultado_ptr->dados_diag[i] = this->dados_diag[i] * escalar;
+    }
+    return resultado;
+}
+
+
+// =================================================================================
+// ==                       IMPLEMENTAÇÕES - Calculadora                          ==
+// =================================================================================
+
+// Factory Method
+std::unique_ptr<Matriz> Calculadora::criarMatrizPelaAnalise(const std::vector<std::vector<double>>& data) {
+    if (data.empty()) throw std::invalid_argument("Matriz vazia.");
+    
+    int l = data.size();
+    if(l > 0 && data[0].empty()) throw std::invalid_argument("Matriz com colunas vazias.");
+    int c = data[0].size();
+    
+    // Validar se todas as linhas têm o mesmo número de colunas
+    for(size_t i = 1; i < l; ++i) {
+        if(data[i].size() != c) throw std::invalid_argument("Matriz malformada: linhas com tamanhos diferentes.");
+    }
+
+    if (l != c) { // Matriz não-quadrada
+        return std::make_unique<MatrizGeral>(data);
+    }
+    
+    // Análise para matrizes quadradas
+    bool isDiagonal = true, isTriInf = true, isTriSup = true;
+    for (int i = 0; i < l; ++i) {
+        for (int j = 0; j < c; ++j) {
+            if (i != j && data[i][j] != 0.0) isDiagonal = false;
+            if (j > i && data[i][j] != 0.0) isTriInf = false;
+            if (j < i && data[i][j] != 0.0) isTriSup = false;
+        }
+    }
+
+    if (isDiagonal) {
+        auto m = std::make_unique<MatrizDiagonal>(l);
+        for(int i = 0; i < l; ++i) m->set(i, i, data[i][i]);
+        return m;
+    }
+    if (isTriInf) {
+        auto m = std::make_unique<MatrizTriangularInferior>(l);
+        for(int i = 0; i < l; ++i) for(int j = 0; j <= i; ++j) m->set(i, j, data[i][j]);
+        return m;
+    }
+    if (isTriSup) {
+        auto m = std::make_unique<MatrizTriangularSuperior>(l);
+        for(int i = 0; i < l; ++i) for(int j = i; j < l; ++j) m->set(i, j, data[i][j]);
+        return m;
+    }
+    
+    return std::make_unique<MatrizQuadradaGeral>(data);
+}
+
+void Calculadora::inserirMatriz() {
+    std::string nome;
+    std::cout << "Digite um nome (sem espaços) para a nova matriz: ";
+    std::cin >> nome;
+    
+    if(nomes.count(nome)){
+        std::cout << "Erro: Já existe uma matriz com esse nome.\n";
+        return;
+    }
+
+    int l, c;
+    std::cout << "Digite o número de linhas: ";
+    std::cin >> l;
+    std::cout << "Digite o número de colunas: ";
+    std::cin >> c;
+
+    if (l <= 0 || c <= 0) {
+        std::cout << "Erro: Dimensões inválidas.\n";
+        return;
+    }
+
+    std::vector<std::vector<double>> data(l, std::vector<double>(c));
+    std::cout << "Digite os " << l * c << " elementos da matriz (linha por linha):\n";
+    for (int i = 0; i < l; ++i) {
+        for (int j = 0; j < c; ++j) {
+            std::cin >> data[i][j];
+        }
+    }
+
+    try {
+        auto nova_matriz = criarMatrizPelaAnalise(data);
+        std::cout << "=> Matriz reconhecida e criada como do tipo: " << nova_matriz->getTipo() << std::endl;
+        matrizes.push_back(std::move(nova_matriz));
+        nomes[nome] = matrizes.size() - 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Erro ao criar matriz: " << e.what() << std::endl;
+    }
+}
+
+void Calculadora::inserirIdentidade() {
+    int ordem;
+    std::string nome;
+    std::cout << "Digite um nome para a nova matriz identidade: ";
+    std::cin >> nome;
+    if(nomes.count(nome)){
+        std::cout << "Erro: Já existe uma matriz com esse nome.\n";
+        return;
+    }
+    std::cout << "Digite a ordem da matriz identidade: ";
+    std::cin >> ordem;
+    if (ordem <= 0) {
+        std::cout << "Erro: Ordem inválida.\n";
+        return;
+    }
+
+    auto id = std::make_unique<MatrizDiagonal>(ordem);
+    for(int i=0; i<ordem; ++i) id->set(i, i, 1.0);
+    
+    std::cout << "=> Matriz Identidade criada com sucesso!\n";
+    matrizes.push_back(std::move(id));
+    nomes[nome] = matrizes.size() - 1;
+}
+
+void Calculadora::listarMatrizes() {
+     std::cout << "\n--- Lista de Matrizes Armazenadas ---\n";
+     if (matrizes.empty()) {
+        std::cout << "Nenhuma matriz na lista.\n";
+        return;
+    }
+    for(auto const& [nome, indice] : nomes) {
+        if(indice < matrizes.size() && matrizes[indice]) {
+            const auto& m = matrizes[indice];
+            std::cout << "Índice: " << std::setw(3) << indice 
+                      << " | Nome: " << std::setw(15) << std::left << nome
+                      << " | Tipo: " << std::setw(20) << m->getTipo() 
+                      << " | Dimensões: " << m->getLinhas() << "x" << m->getColunas() << std::right << std::endl;
+        }
+    }
+    std::cout << "-------------------------------------\n";
+}
+
+int Calculadora::selecionarMatriz(const std::string& prompt) {
+    if (matrizes.empty()){
+        throw std::runtime_error("Nenhuma matriz na lista para selecionar.");
+    }
+    listarMatrizes();
+    int indice;
+    std::cout << prompt;
+    std::cin >> indice;
+    if (std::cin.fail() || indice < 0 || indice >= matrizes.size() || !matrizes[indice]) {
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        throw std::out_of_range("Índice inválido ou matriz não existe.");
+    }
+    return indice;
+}
+
+void Calculadora::operacaoSoma() {
+    try {
+        int idx1 = selecionarMatriz("Selecione o índice da primeira matriz (A): ");
+        int idx2 = selecionarMatriz("Selecione o índice da segunda matriz (B): ");
+        std::cout << "Digite um nome para a matriz resultado (C = A + B): ";
+        std::string nome;
+        std::cin >> nome;
+
+        // Polimorfismo em ação!
+        auto C = (*matrizes[idx1]) + (*matrizes[idx2]); 
+
+        std::cout << "=> Resultado (Tipo: " << C->getTipo() << "):\n";
+        C->imprimir();
+
+        matrizes.push_back(std::move(C));
+        nomes[nome] = matrizes.size() - 1;
+
+    } catch (const std::exception& e) {
+        std::cerr << "ERRO NA OPERAÇÃO: " << e.what() << std::endl;
+    }
+}
+
+// FUNCIONALIDADE ADICIONADA
+void Calculadora::operacaoSubtracao() {
+    try {
+        int idx1 = selecionarMatriz("Selecione o índice da primeira matriz (A): ");
+        int idx2 = selecionarMatriz("Selecione o índice da segunda matriz (B): ");
+        std::string nome;
+        std::cout << "Digite um nome para a matriz resultado (C = A - B): ";
+        std::cin >> nome;
+        
+        auto C = (*matrizes[idx1]) - (*matrizes[idx2]);
+        std::cout << "=> Resultado (Tipo: " << C->getTipo() << "):\n";
+        C->imprimir();
+        
+        matrizes.push_back(std::move(C));
+        nomes[nome] = matrizes.size() - 1;
+    } catch(const std::exception& e) {
+        std::cerr << "ERRO NA OPERAÇÃO: " << e.what() << std::endl;
+    }
+}
+
+// FUNCIONALIDADE ADICIONADA
+void Calculadora::operacaoMultiplicacaoEscalar() {
+    try {
+        int idx = selecionarMatriz("Selecione o índice da matriz (A): ");
+        double escalar;
+        std::cout << "Digite o valor do escalar: ";
+        std::cin >> escalar;
+        std::string nome;
+        std::cout << "Digite um nome para a matriz resultado (C = escalar * A): ";
+        std::cin >> nome;
+
+        auto C = (*matrizes[idx]) * escalar;
+        std::cout << "=> Resultado (Tipo: " << C->getTipo() << "):\n";
+        C->imprimir();
+
+        matrizes.push_back(std::move(C));
+        nomes[nome] = matrizes.size() - 1;
+    } catch (const std::exception& e) {
+        std::cerr << "ERRO NA OPERAÇÃO: " << e.what() << std::endl;
+    }
+}
+
+// FUNCIONALIDADE ADICIONADA
+void Calculadora::operacaoTransposicao() {
+    try {
+        int idx = selecionarMatriz("Selecione o índice da matriz (A): ");
+        std::string nome;
+        std::cout << "Digite um nome para a matriz transposta (C = A^T): ";
+        std::cin >> nome;
+
+        auto C = matrizes[idx]->transpor();
+        std::cout << "=> Resultado (Tipo: " << C->getTipo() << "):\n";
+        C->imprimir();
+
+        matrizes.push_back(std::move(C));
+        nomes[nome] = matrizes.size() - 1;
+    } catch (const std::exception& e) {
+        std::cerr << "ERRO NA OPERAÇÃO: " << e.what() << std::endl;
+    }
+}
+
+void Calculadora::calcularTraco() {
+    try {
+        int idx = selecionarMatriz("Selecione a matriz para calcular o traço: ");
+        if (auto mq = dynamic_cast<MatrizQuadrada*>(matrizes[idx].get())) {
+            std::cout << "=> O traço da matriz é: " << mq->traco() << std::endl;
+        } else {
+            std::cout << "Erro: O traço só pode ser calculado para matrizes quadradas." << std::endl;
+        }
+    } catch(const std::exception& e) {
+        std::cerr << "ERRO: " << e.what() << std::endl;
+    }
+}
+
+void Calculadora::calcularDeterminante() {
+     try {
+        int idx = selecionarMatriz("Selecione a matriz para calcular o determinante: ");
+        // Tenta converter para MatrizQuadrada e chama o método virtual
+        if (auto mq = dynamic_cast<MatrizQuadrada*>(matrizes[idx].get())) {
+            std::cout << "=> O determinante da matriz é: " << mq->determinante() << std::endl;
+        } else {
+            std::cout << "Erro: O determinante só pode ser calculado para matrizes quadradas." << std::endl;
+        }
+    } catch(const std::exception& e) {
+        std::cerr << "ERRO: " << e.what() << std::endl;
+        std::cout << "Aviso: O cálculo do determinante está implementado de forma otimizada apenas para matrizes Triangulares e Diagonais." << std::endl;
+    }
+}
+
+void Calculadora::imprimirMatriz(){
+    try {
+        int idx = selecionarMatriz("Selecione o índice da matriz a ser impressa: ");
+        std::cout << "--- Imprimindo Matriz (Índice " << idx << ") ---\n";
+        matrizes[idx]->imprimir();
+        std::cout << "---------------------------------------\n";
+    } catch (const std::exception& e){
+        std::cerr << "ERRO: " << e.what() << std::endl;
+    }
+}
+
+void Calculadora::exibirMenu() {
+    std::cout << "\n+-------------------------------------------------+\n"
+              << "|   Calculadora Matricial Orientada a Objetos     |\n"
+              << "+-------------------------------------------------+\n"
+              << "| GERENCIAR MATRIZES                              |\n"
+              << "| 1. Inserir nova matriz (leitura do teclado)     |\n"
+              << "| 2. Inserir matriz identidade                    |\n"
+              << "| 3. Listar matrizes armazenadas                  |\n"
+              << "| 4. Imprimir uma matriz                          |\n"
+              << "|-------------------------------------------------|\n"
+              << "| OPERAÇÕES                                       |\n"
+              << "| 5. Somar matrizes (C = A + B)                   |\n"
+              << "| 6. Subtrair matrizes (C = A - B)                |\n"
+              << "| 7. Multiplicar por escalar (C = k * A)          |\n"
+              << "| 8. Transpor matriz (C = A^T)                    |\n"
+              << "| 9. Calcular Traço de uma matriz                 |\n"
+              << "| 10. Calcular Determinante (p/ Quadradas)        |\n"
+              << "|-------------------------------------------------|\n"
+              << "| 0. Sair                                         |\n"
+              << "+-------------------------------------------------+\n"
+              << "Escolha uma opção: ";
+}
+
+void Calculadora::executar() {
+    int opcao = -1;
+    do {
+        exibirMenu();
+        std::cin >> opcao;
+        if(std::cin.fail()){
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            opcao = -1; 
+        }
+
+        switch (opcao) {
+            case 1: inserirMatriz(); break; // CORREÇÃO: Erro de digitação
+            case 2: inserirIdentidade(); break;
+            case 3: listarMatrizes(); break;
+            case 4: imprimirMatriz(); break;
+            case 5: operacaoSoma(); break;
+            case 6: operacaoSubtracao(); break;
+            case 7: operacaoMultiplicacaoEscalar(); break;
+            case 8: operacaoTransposicao(); break;
+            case 9: calcularTraco(); break;
+            case 10: calcularDeterminante(); break;
+            case 0: std::cout << "Encerrando o programa...\n"; break;
+            default: std::cout << "Opção inválida. Tente novamente.\n"; break;
+        }
+    } while (opcao != 0);
+}
+
+
+// =================================================================================
+// ==                        FUNÇÃO PRINCIPAL (main)                              ==
+// =================================================================================
+
+int main() {
+    Calculadora calc;
+    calc.executar();
+    
+    return 0;
+}
